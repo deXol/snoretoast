@@ -1,6 +1,6 @@
 /*
     SnoreToast is capable to invoke Windows 8 toast notifications.
-    Copyright (C) 2013-2015  Hannah von Reth <vonreth@kde.org>
+    Copyright (C) 2013-2019  Hannah von Reth <vonreth@kde.org>
 
     SnoreToast is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,12 @@
 #include <regex>
 #include <corecrt_wstring.h>
 
+// compat with older sdk
+#ifndef INIT_PKEY_AppUserModel_ToastActivatorCLSID
+EXTERN_C const PROPERTYKEY DECLSPEC_SELECTANY PKEY_AppUserModel_ToastActivatorCLSID = { { 0x9F4C2855, 0x9F79, 0x4B39,{ 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3 } }, 26 };
+#define INIT_PKEY_AppUserModel_ToastActivatorCLSID { { 0x9F4C2855, 0x9F79, 0x4B39, 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3 }, 26 }
+#endif //#ifndef INIT_PKEY_AppUserModel_ToastActivatorCLSID
+
 using namespace Microsoft::WRL;
 
 HRESULT LinkHelper::tryCreateShortcut(const std::wstring &shortcutPath, const std::wstring &exePath, const std::wstring &appID)
@@ -48,7 +54,11 @@ HRESULT LinkHelper::tryCreateShortcut(const std::wstring &shortcutPath, const st
         bool fileExists = attributes < 0xFFFFFFF;
 
         if (!fileExists) {
-            hr = installShortcut(lnkName.str(), exePath, appID, __uuidof(CToastNotificationActivationCallback));
+            /**
+             * Required to use the CToastNotificationActivationCallback for buttons and textbox interactions.
+             * windows.ui.notifications does not support user interaction from cpp
+             */
+            hr = installShortcut(lnkName.str(), exePath, appID);
         } else {
             hr = S_FALSE;
         }
@@ -62,7 +72,7 @@ HRESULT LinkHelper::tryCreateShortcut(const std::wstring &appID)
 {
     wchar_t buffer[MAX_PATH];
     if (GetModuleFileNameEx(GetCurrentProcess(), nullptr, buffer, MAX_PATH) > 0) {
-        return tryCreateShortcut(L"Mooltipass.lnk", buffer, appID);
+        return tryCreateShortcut(L"SnoreToast.lnk", buffer, appID);
     }
     return E_FAIL;
 }
@@ -81,11 +91,14 @@ void LinkHelper::unregisterActivator()
 }
 
 // Install the shortcut
-HRESULT LinkHelper::installShortcut(const std::wstring &shortcutPath, const std::wstring &exePath, const std::wstring &appID, GUID toastGUID)
+HRESULT LinkHelper::installShortcut(const std::wstring &shortcutPath, const std::wstring &exePath, const std::wstring &appID)
 {
     PCWSTR pszExePath = exePath.c_str();
-    std::wcout << L"Installing shortcut: " << shortcutPath << L" " << exePath << L" " << appID << std::endl;
-    HRESULT hr = HRESULT_FROM_WIN32(::RegSetKeyValueW(HKEY_CURRENT_USER, L"SOFTWARE\\Classes\\CLSID\\{383803B6-AFDA-4220-BFC3-0DBF810106BA}\\LocalServer32", nullptr, REG_SZ, pszExePath, static_cast<DWORD>(wcslen(pszExePath)*sizeof(wchar_t))));
+    std::wcerr << L"Installing shortcut: " << shortcutPath << L" " << exePath << L" " << appID << std::endl;
+    //Add CToastNotificationActivationCallback to registry
+    std::wstringstream regKey;
+    regKey << L"SOFTWARE\\Classes\\CLSID\\{" << TOAST_UUID  << L"}\\LocalServer32";
+    HRESULT hr = HRESULT_FROM_WIN32(::RegSetKeyValueW(HKEY_CURRENT_USER, regKey.str().c_str(), nullptr, REG_SZ, pszExePath, static_cast<DWORD>(wcslen(pszExePath)*sizeof(wchar_t))));
 
     if (SUCCEEDED(hr)) {
         ComPtr<IShellLink> shellLink;
@@ -108,7 +121,8 @@ HRESULT LinkHelper::installShortcut(const std::wstring &shortcutPath, const std:
                                 PropVariantClear(&appIdPropVar);
                                 PROPVARIANT toastActivatorPropVar;
                                 toastActivatorPropVar.vt = VT_CLSID;
-                                toastActivatorPropVar.puuid = &toastGUID;
+                                toastActivatorPropVar.puuid = const_cast<CLSID*>(&__uuidof(CToastNotificationActivationCallback));
+
                                 hr = propertyStore->SetValue(PKEY_AppUserModel_ToastActivatorCLSID, toastActivatorPropVar);
                                 if (SUCCEEDED(hr)) {
                                     hr = propertyStore->Commit();
@@ -128,7 +142,7 @@ HRESULT LinkHelper::installShortcut(const std::wstring &shortcutPath, const std:
         }
     }
     if (FAILED(hr)) {
-        std::wcout << "Failed to install shortcut " << shortcutPath << "  error: " << _com_error(hr).ErrorMessage() << std::endl;
+        std::wcerr << "Failed to install shortcut " << shortcutPath << "  error: " << _com_error(hr).ErrorMessage() << std::endl;
     }
     return hr;
 }

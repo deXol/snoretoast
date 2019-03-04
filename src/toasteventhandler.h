@@ -1,6 +1,6 @@
 /*
     SnoreToast is capable to invoke Windows 8 toast notifications.
-    Copyright (C) 2013-2015  Hannah von Reth <vonreth@kde.org>
+    Copyright (C) 2013-2019  Hannah von Reth <vonreth@kde.org>
 
     SnoreToast is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -18,6 +18,8 @@
 #pragma once
 #include "snoretoasts.h"
 #include "wrl.h"
+
+#define TOAST_UUID "383803B6-AFDA-4220-BFC3-0DBF810106BF"
 
 typedef ABI::Windows::Foundation::ITypedEventHandler<ABI::Windows::UI::Notifications::ToastNotification *, ::IInspectable *> DesktopToastActivatedEventHandler;
 typedef ABI::Windows::Foundation::ITypedEventHandler<ABI::Windows::UI::Notifications::ToastNotification *, ABI::Windows::UI::Notifications::ToastDismissedEventArgs *> DesktopToastDismissedEventHandler;
@@ -42,7 +44,7 @@ public:
 
 
 //The COM server which implements the callback notifcation from Action Center
-class DECLSPEC_UUID("383803B6-AFDA-4220-BFC3-0DBF810106BF")
+class DECLSPEC_UUID(TOAST_UUID)
   CToastNotificationActivationCallback : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, INotificationActivationCallback>
 {
 public:
@@ -116,6 +118,6 @@ public:
 
 private:
     ULONG m_ref;
-    SnoreToasts::USER_ACTION m_action;
+    SnoreToasts::USER_ACTION m_userAction;
     HANDLE m_event;
 };

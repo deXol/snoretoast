@@ -1,6 +1,6 @@
 /*
     SnoreToast is capable to invoke Windows 8 toast notifications.
-    Copyright (C) 2013-2015  Hannah von Reth <vonreth@kde.org>
+    Copyright (C) 2013-2019  Hannah von Reth <vonreth@kde.org>
 
     SnoreToast is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -108,6 +108,7 @@ void SnoreToasts::displayToast(const std::wstring &title, const std::wstring &bo
             }
         }
     }
+    //    printXML();
 
     if (SUCCEEDED(hr)) {
         if (m_image.length() > 0) {
@@ -124,7 +125,7 @@ void SnoreToasts::displayToast(const std::wstring &title, const std::wstring &bo
             }
         }
     }
-    // printXML();
+    //printXML();
     m_action = SUCCEEDED(hr) ? Success : Failed;
 }
 
@@ -136,14 +137,9 @@ SnoreToasts::USER_ACTION SnoreToasts::userAction()
         m_action = m_eventHanlder.Get()->userAction();
         if (m_action == SnoreToasts::Hidden) {
             m_notifier->Hide(m_notification.Get());
-            std::wcout << L"The application hid the toast using ToastNotifier.hide()" << std::endl;
+            std::wcerr << L"The application hid the toast using ToastNotifier.hide()" << std::endl;
         }
         CloseHandle(event);
-        if (m_action != SnoreToasts::Success && m_action != SnoreToasts::Timeout)
-        {
-            std::wcout << L"Result:[][" + m_id + L"]" << std::endl;
-            m_notifier->Hide(m_notification.Get());
-        }
     }
     return m_action;
 }
@@ -159,7 +155,7 @@ bool SnoreToasts::closeNotification()
         SetEvent(event);
         return true;
     }
-    std::wcout << "Notification " << m_id << " does not exist" << std::endl;
+    std::wcerr << "Notification " << m_id << " does not exist" << std::endl;
     return false;
 }
 
@@ -342,7 +338,9 @@ HRESULT SnoreToasts::setTextBox(ComPtr<IXmlNode> root)
                         hr = actionNode->get_Attributes(&actionAttributes);
                         if (SUCCEEDED(hr)) {
                             hr &= addAttribute(L"content", actionAttributes.Get(), L"Send");
-                            hr &= addAttribute(L"arguments", actionAttributes.Get(), L"[" + m_id + L"]");
+                            std::wstringstream id;
+                            id << "action=reply&amp;processId=" << GetCurrentProcessId();
+                            hr &= addAttribute(L"arguments", actionAttributes.Get(), id.str());
                             hr &= addAttribute(L"hint-inputId", actionAttributes.Get(), L"textBox");
                         }
                     }
@@ -439,7 +437,7 @@ HRESULT SnoreToasts::createNewActionButton(ComPtr<IXmlNode> actionsNode, const s
             hr = actionNode->get_Attributes(&actionAttributes);
             if (SUCCEEDED(hr)) {
                 hr &= addAttribute(L"content", actionAttributes.Get(), value);
-                hr &= addAttribute(L"arguments", actionAttributes.Get(), L"[" + value + L"][" + m_id + L"]");
+                hr &= addAttribute(L"arguments", actionAttributes.Get(), value);
                 hr &= addAttribute(L"activationType", actionAttributes.Get(), L"foreground");
             }
         }
@@ -456,7 +454,7 @@ void SnoreToasts::printXML()
     HSTRING string;
     s->GetXml(&string);
     PCWSTR str = WindowsGetStringRawBuffer(string, NULL);
-    std::wcout << L"------------------------" << std::endl
+    std::wcerr << L"------------------------" << std::endl
                << L"SnoreToast " << version() << std::endl
                << L"------------------------" << std::endl
                << m_appID << std::endl
@@ -468,7 +466,6 @@ void SnoreToasts::printXML()
 // Create and display the toast
 HRESULT SnoreToasts::createToast()
 {
-    //std::wcout << "mAppid: " << m_appID << std::endl;
     HRESULT hr = m_toastManager->CreateToastNotifierWithId(StringReferenceWrapper(m_appID).Get(), &m_notifier);
     if (SUCCEEDED(hr)) {
         if (SUCCEEDED(hr)) {
@@ -483,25 +480,25 @@ HRESULT SnoreToasts::createToast()
                         if (setting == NotificationSetting_Enabled) {
                             hr = setEventHandler(m_notification);
                         } else {
-                            std::wcout << L"Notifications are disabled" << std::endl
+                            std::wcerr << L"Notifications are disabled" << std::endl
                                        << L"Reason: ";
 
                             switch (setting) {
                             case NotificationSetting_DisabledForApplication:
-                                std::wcout << L"DisabledForApplication" << std::endl;
+                                std::wcerr << L"DisabledForApplication" << std::endl;
                                 break;
                             case NotificationSetting_DisabledForUser:
-                                std::wcout << L"DisabledForUser" << std::endl;
+                                std::wcerr << L"DisabledForUser" << std::endl;
                                 break;
                             case NotificationSetting_DisabledByGroupPolicy:
-                                std::wcout << L"DisabledByGroupPolicy" << std::endl;
+                                std::wcerr << L"DisabledByGroupPolicy" << std::endl;
                                 break;
                             case NotificationSetting_DisabledByManifest:
-                                std::wcout << L"DisabledByManifest" << std::endl;
+                                std::wcerr << L"DisabledByManifest" << std::endl;
                                 break;
                             }
-                            std::wcout << L"Please make sure that the app id is set correctly." << std::endl;
-                            std::wcout << L"Command Line: " << GetCommandLineW() << std::endl;
+                            std::wcerr << L"Please make sure that the app id is set correctly." << std::endl;
+                            std::wcerr << L"Command Line: " << GetCommandLineW() << std::endl;
                         }
                     }
                     if (SUCCEEDED(hr)) {
@@ -516,5 +513,5 @@ HRESULT SnoreToasts::createToast()
 
 std::wstring SnoreToasts::version()
 {
-    return L"0.5.2";
+    return L"0.5.99";
 }

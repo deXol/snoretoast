@@ -1,6 +1,6 @@
 /*
     SnoreToast is capable to invoke Windows 8 toast notifications.
-    Copyright (C) 2013-2015  Hannah von Reth <vonreth@kde.org>
+    Copyright (C) 2013-2019  Hannah von Reth <vonreth@kde.org>
 
     SnoreToast is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
@@ -18,10 +18,12 @@
 #include "snoretoasts.h"
 #include "linkhelper.h"
 
+#include <shellapi.h>
+#include <roapi.h>
+
 #include <string>
 #include <iostream>
 #include <sstream>
-#include <roapi.h>
 #include <algorithm>
 #include <functional>
 #include <vector>
@@ -31,20 +33,20 @@ using namespace Windows::Foundation;
 void help(const std::wstring &error)
 {
     if (!error.empty()) {
-        std::wcout << error << std::endl;
+        std::wcerr << error << std::endl;
     } else {
-        std::wcout << L"Welcome to SnoreToast " << SnoreToasts::version() << "." << std::endl
+        std::wcerr << L"Welcome to SnoreToast " << SnoreToasts::version() << "." << std::endl
                    << L"A command line application which is capable of creating Windows Toast notifications." << std::endl;
     }
-    std::wcout << std::endl
+    std::wcerr << std::endl
                << L"---- Usage ----" << std::endl
                << L"SnoreToast [Options]" << std::endl
                << std::endl
                << L"---- Options ----" << std::endl
                << L"[-t] <title string>\t| Displayed on the first line of the toast." << std::endl
                << L"[-m] <message string>\t| Displayed on the remaining lines, wrapped." << std::endl
-               << L"[-b] <button1;button2 string>\t| Displayed on the bottom line, can list multiple buttons separated by ;" << std::endl
-               << L"[-tb]\t| Displayed a textbox on the bottom line, only if buttons are not presented." << std::endl
+               << L"[-b] <button1;button2 string>| Displayed on the bottom line, can list multiple buttons separated by ;" << std::endl
+               << L"[-tb]\t\t\t| Displayed a textbox on the bottom line, only if buttons are not presented." << std::endl
                << L"[-p] <image URI>\t| Display toast with an image, local files only." << std::endl
                << L"[-w] \t\t\t| Wait for toast to expire or activate." << std::endl
                << L"[-id] <id>\t\t| sets the id for a notification to be able to close it later." << std::endl
@@ -53,17 +55,19 @@ void help(const std::wstring &error)
                << L"[-appID] <App.ID>\t| Don't create a shortcut but use the provided app id." << std::endl
                << L"-close <id>\t\t| Closes a currently displayed notification, in order to be able to close a notification the parameter -w must be used to create the notification." << std::endl
                << std::endl
-               << L"-install | Creates a shortcut in the start menu which point to the executable SnoraToast, appID used for the notifications." << std::endl
+               << L"-install <path> <application> <appID>| Creates a shortcut <path> in the start menu which point to the executable <application>, appID used for the notifications." << std::endl
                << std::endl
                << L"-v \t\t\t| Print the version and copying information." << std::endl
                << L"-h\t\t\t| Print these instructions. Same as no args." << std::endl
                << L"Exit Status\t:  Exit Code" << std::endl
                << L"Failed\t\t: -1"
-               << std::endl
+               << std::endl << std::endl
                << "Success\t\t:  0" << std::endl
                << "Hidden\t\t:  1" << std::endl
                << "Dismissed\t:  2" << std::endl
-               << "Timeout\t\t:  3" << std::endl
+               << "TimedOut\t:  3" << std::endl
+               << "ButtonPressed\t:  4" << std::endl
+               << "TextEntered\t:  5" << std::endl
                << std::endl
                << L"---- Image Notes ----" << std::endl
                << L"Images must be .png with:" << std::endl
@@ -75,8 +79,8 @@ void help(const std::wstring &error)
 
 void version()
 {
-    std::wcout << L"SnoreToast version " << SnoreToasts::version() << std::endl
-               << L"Copyright (C) 2015  Hannah von Reth <vonreth@kde.org>" << std::endl
+    std::wcerr << L"SnoreToast version " << SnoreToasts::version() << std::endl
+               << L"Copyright (C) 2019  Hannah von Reth <vonreth@kde.org>" << std::endl
                << L"SnoreToast is free software: you can redistribute it and/or modify" << std::endl
                << L"it under the terms of the GNU Lesser General Public License as published by" << std::endl
                << L"the Free Software Foundation, either version 3 of the License, or" << std::endl
@@ -150,8 +154,16 @@ SnoreToasts::USER_ACTION parse(std::vector<wchar_t*> args)
         } else  if (arg == L"-tb") {
             isTextBoxEnabled = true;
         } else  if (arg == L"-install") {
-            appID = L"Mooltipass";
-            return SUCCEEDED(LinkHelper::tryCreateShortcut(appID)) ? SnoreToasts::Success : SnoreToasts::Failed;
+            std::wstring shortcut(nextArg(it, L"Missing argument to -install.\n"
+                                          L"Supply argument as -install \"path to your shortcut\" \"path to the application the shortcut should point to\" \"App.ID\""));
+
+            std::wstring exe(nextArg(it, L"Missing argument to -install.\n"
+                                     L"Supply argument as -install \"path to your shortcut\" \"path to the application the shortcut should point to\" \"App.ID\""));
+
+            appID = nextArg(it, L"Missing argument to -install.\n"
+                            L"Supply argument as -install \"path to your shortcut\" \"path to the application the shortcut should point to\" \"App.ID\"");
+
+            return SUCCEEDED(LinkHelper::tryCreateShortcut(shortcut, exe, appID)) ? SnoreToasts::Success : SnoreToasts::Failed;
         } else if (arg == L"-close") {
             id = nextArg(it, L"Missing agument to -close"
                          L"Supply argument as -close \"id\"");
@@ -183,7 +195,7 @@ SnoreToasts::USER_ACTION parse(std::vector<wchar_t*> args)
         hr = (title.length() > 0 && body.length() > 0) ? S_OK : E_FAIL;
         if (SUCCEEDED(hr)) {
             if (appID.length() == 0) {
-                appID = L"Mooltipass";
+                appID = L"Snore.DesktopToasts";
                 hr = LinkHelper::tryCreateShortcut(appID);
             }
             if (SUCCEEDED(hr)) {
